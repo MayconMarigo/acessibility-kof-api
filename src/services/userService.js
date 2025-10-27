@@ -204,6 +204,12 @@ const getDashboardCSVInfo = async (companyId) => {
   return info;
 };
 
+const createManualCall = async (userId, callDuration) => {
+  const created = await userQueries.createManualCall(userId, callDuration);
+
+  return created;
+};
+
 exports.UserService = {
   getUserDataByToken,
   getUserByEmailAndPassword,
@@ -229,4 +235,5 @@ exports.UserService = {
   getUserByEmailAndCredential,
   bulkDeleteUsers,
   getDashboardCSVInfo,
+  createManualCall,
 };

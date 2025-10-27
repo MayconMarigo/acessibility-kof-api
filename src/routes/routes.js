@@ -388,6 +388,25 @@ exports.routesProvider = (app) => {
     }
   });
 
+  app.post("/api/admin/calls/:userId/create", isAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { quantity } = req.body;
+
+      ValidationUtils.checkRequiredValues(
+        ["userId"],
+        [...Object.keys(req.params)]
+      );
+
+      const created = await UserService.createManualCall(userId, quantity);
+
+      res.status(200).send(created);
+    } catch (error) {
+      const { code, message } = extractCodeAndMessageFromError(error.message);
+      res.status(code).send({ message });
+    }
+  });
+
   // ROTAS PUT
 
   app.put("/api/admin/user/update/:userTypeId", isAdmin, async (req, res) => {
@@ -615,7 +634,7 @@ exports.routesProvider = (app) => {
         null,
         false,
         1,
-	callDuration
+        callDuration
       );
 
       return res.status(200).send({ ok: true });

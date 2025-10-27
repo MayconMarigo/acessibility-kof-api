@@ -800,6 +800,44 @@ const updateConfigsByUserId = async (payload) => {
   return updated;
 };
 
+const createManualCall = async (userId, callDuration) => {
+  const uuid = crypto.randomUUID();
+  const created = await sequelize.query(
+    `
+      INSERT INTO calls
+      (
+      callId, 
+      connected,
+      createdAt,
+      updatedAt, 
+      startTime, 
+      endTime, 
+      callerId, 
+      receiverId, 
+      isSocketConnection,
+      createdBy, 
+      callDuration
+      )
+      VALUES
+      (
+      '${uuid}',
+      '1',
+      now(),
+      now(),
+      now(),
+      now(),
+      '${userId}',
+      '${userId}',
+      '1',
+      '${userId}',
+      '${callDuration}'
+      )
+    `
+  );
+
+  return created;
+};
+
 exports.userQueries = {
   findAdminUserByEmail,
   findUserByEmailAndPassword,
@@ -826,5 +864,6 @@ exports.userQueries = {
   getUserTypeIdById,
   getDashboardCSVInfo,
   updateConfigsByUserId,
+  createManualCall
 };
 
