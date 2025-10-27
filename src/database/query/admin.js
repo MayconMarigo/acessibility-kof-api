@@ -56,8 +56,16 @@ const createUser = async (payload) => {
 };
 
 const updateUserByUserEmailOrName = async (payload, type) => {
-  const { name, email, phone, password, status, userTypeId, oldEmail } =
-    payload;
+  const {
+    name,
+    email,
+    phone,
+    password,
+    status,
+    userTypeId,
+    oldEmail,
+    recordCall = false,
+  } = payload;
 
   const updateObject = {
     2: {
@@ -68,6 +76,7 @@ const updateUserByUserEmailOrName = async (payload, type) => {
       status,
       userTypeId,
       updatedAt: new Date(),
+      recordCall,
     },
     3: {
       name,
@@ -106,24 +115,27 @@ const getAllCalls = async (startDate, endDate) => {
   initDate = startDate.split("/").reverse().join("/");
   finalDate = endDate.split("/").reverse().join("/");
 
-  console.log(initDate);
-  console.log(finalDate);
   const [calls] = await sequelize.query(`
     SELECT
       COALESCE(caller.name, "Anônimo") AS callerName,
       receiver.name AS receiverName,
-      caller.speciality as department,
-      receiver.speciality,
-      DATE_SUB(c.startTime, INTERVAL 3 HOUR) AS startTime,
-      TIME_FORMAT(SEC_TO_TIME(GREATEST(CEIL(TIMESTAMPDIFF(SECOND, c.startTime, c.endTime) / 60), 1) * 60), '%H:%i') AS callDuration
+      DATE_FORMAT(c.startTime, '%d/%m/%Y %H:%i') AS startTime,
+      c.callDuration AS callDuration,
+    r.rating
     FROM calls c
     LEFT JOIN users caller ON c.callerId = caller.id
     INNER JOIN users receiver ON c.receiverId = receiver.id
-    WHERE (c.startTime BETWEEN '${initDate} 00:00:00' AND '${finalDate} 23:59:59')
+    LEFT JOIN ratings r on c.callId = r.callId
+    WHERE (DATE_FORMAT(c.startTime, '%Y/%m/%d') BETWEEN '${initDate}' AND '${finalDate}')
     AND
-    caller.userTypeId = 4
+      caller.userTypeId = 4
     AND
-    c.isSocketConnection = 1
+      c.isSocketConnection = 1
+    AND
+      c.connected = 1
+    ORDER BY
+    c.id
+    DESC;
     `);
 
   const [callsQty] = await sequelize.query(`
@@ -132,29 +144,32 @@ const getAllCalls = async (startDate, endDate) => {
       FROM calls c
       INNER JOIN users u
       ON
-      c.callerId = u.id
+        c.callerId = u.id
       AND
         c.isSocketConnection = 1
       AND
-        (c.startTime BETWEEN '${initDate} 00:00:00' AND '${finalDate} 23:59:59')
+        (DATE_FORMAT(c.startTime, '%Y/%m/%d') BETWEEN '${initDate}' AND '${finalDate}')
+      AND
+        c.connected = 1
+      AND
+        u.userTypeId = 4
     `);
 
   const [durationInMinutes] = await sequelize.query(`
     SELECT 
-      COALESCE(SUM(
-          GREATEST(
-              CEIL(TIMESTAMPDIFF(SECOND, c.startTime, c.endTime) / 60),
-              1
-          )
-      ), 0) AS minutes_count
+      COALESCE(SUM(c.callDuration), 0) AS minutes_count
       from calls c
       INNER JOIN users u
       ON
-      c.callerId = u.id
+        c.callerId = u.id
       AND
         c.isSocketConnection = 1
       AND
-        (c.startTime BETWEEN '${initDate} 00:00:00' AND '${finalDate} 23:59:59')
+        (DATE_FORMAT(c.startTime, '%Y/%m/%d') BETWEEN '${initDate}' AND '${finalDate}')
+      AND
+        c.connected = 1
+      AND
+        u.userTypeId = 4
     `);
 
   const { calls_quantity } = callsQty[0];
@@ -262,6 +277,8 @@ const getDashboardCSVInfo = async () => {
       c.isSocketConnection = 1
     AND
       c.connected = 1
+    AND
+      u.userTypeId = 4
     GROUP BY 
       month,
       u.createdBy
@@ -273,7 +290,7 @@ const getDashboardCSVInfo = async () => {
   return calls;
 };
 
-const getDashboardInfo = async (companyId = null) => {
+const getDashboardInfo = async (companyId) => {
   const [calls] = await sequelize.query(`
   SELECT 
     DATE_FORMAT(startTime, '%m') AS month,
@@ -281,10 +298,14 @@ const getDashboardInfo = async (companyId = null) => {
     COALESCE(SUM(CEIL(TIMESTAMPDIFF(SECOND, c.startTime, c.endTime) / 60)), 0) AS minutes_count
   FROM 
     calls c
+  INNER JOIN users u
+  ON u.id = c.callerId
   WHERE 
-    isSocketConnection = 1
+    c.isSocketConnection = 1
   AND
-    connected = 1
+    c.connected = 1
+  AND
+    u.userTypeId = 4
   GROUP BY 
     month
   ORDER BY 
@@ -310,12 +331,14 @@ const getDashboardInfo = async (companyId = null) => {
     c.connected = 1
     AND
     u.createdBy = '${companyId}'
+    AND
+    u.userTypeId = 4
     `
   );
 
   const [durationInMinutes] = await sequelize.query(`
     SELECT 
-    COALESCE(SUM(CEIL(TIMESTAMPDIFF(SECOND, c.startTime, c.endTime) / 60)), 0) AS minutes_count
+    COALESCE(SUM(c.callDuration), 0) AS minutes_count
     FROM calls c
     INNER JOIN users u
     ON u.id = c.callerId
@@ -325,6 +348,8 @@ const getDashboardInfo = async (companyId = null) => {
       c.connected = 1
     AND
     u.createdBy = '${companyId}'
+    AND
+      u.userTypeId = 4
     `);
 
   const { users_quantity } = users[0];
@@ -391,3 +416,4 @@ exports.adminQueries = {
   getAgendaByDateRange,
   getAllUsersNameAndId,
 };
+

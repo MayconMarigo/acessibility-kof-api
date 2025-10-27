@@ -1,4 +1,4 @@
-const { literal } = require("sequelize");
+const { literal, cast, col } = require("sequelize");
 const { User, UserType, Call, Credential, Agenda } = require("../../../models");
 const Crypto = require("crypto");
 const { dateUtils } = require("../../utils/date");
@@ -72,6 +72,7 @@ const getUserDataById = async (userId) => {
       "colorScheme",
       "userTypeId",
       "createdBy",
+      "recordCall",
     ],
     include: {
       model: UserType,
@@ -93,15 +94,21 @@ const getUserDataById = async (userId) => {
     const [createdByData] = await sequelize.query(
       `
         SELECT 
-        u.logoImage
+        u.logoImage,
+        u.recordCall,
+        u.colorScheme
         FROM users u
         where u.id = '${dataValues.createdBy}'
       `
     );
 
     const logoImage = createdByData[0]?.logoImage;
+    const colorScheme = createdByData[0]?.colorScheme;
+    const recordCall = !!createdByData[0]?.recordCall;
 
     dataValues.logoImage = logoImage;
+    dataValues.recordCall = recordCall;
+    dataValues.colorScheme = colorScheme;
   }
 
   if (dataValues.userTypeId == "2") {
@@ -131,6 +138,7 @@ const getUserDataById = async (userId) => {
   }
 
   delete dataValues.createdBy;
+  dataValues.recordCall = !!dataValues.recordCall;
 
   return dataValues;
 };
@@ -282,7 +290,7 @@ const getAllCallsByUserId = async (startDate, endDate, userId) => {
     SELECT
       COALESCE(caller.name, "Anônimo") AS callerName,
       c.startTime,
-      TIME_FORMAT(SEC_TO_TIME(CEIL(TIMESTAMPDIFF(SECOND, c.startTime, c.endTime) / 60) * 60), '%H:%i') AS callDuration
+      c.callDuration AS callDuration
     FROM calls c
     LEFT JOIN users caller ON c.callerId = caller.id
     INNER JOIN users receiver ON c.receiverId = receiver.id
@@ -388,7 +396,7 @@ const getAllUsersByCompanyId = async (companyId) => {
       "email",
       "phone",
       // [literal("document"), "cpf"],
-      "speciality",
+      // "speciality",
       "status",
     ],
   });
@@ -585,13 +593,8 @@ const getAllCallsByCompanyId = async (startDate, endDate, companyId) => {
     COALESCE(caller.name, "Anônimo") AS callerName,
     receiver.name AS receiverName,
     caller.speciality as department,
-    DATE_FORMAT(c.startTime, '%d/%m/%Y %H:%i') as startTime, 
-    TIME_FORMAT(SEC_TO_TIME(
-      GREATEST(
-          CEIL(TIMESTAMPDIFF(SECOND, c.startTime, c.endTime) / 60), 
-        1
-        ) * 60
-      ), '%i') AS callDuration,
+    DATE_FORMAT(DATE_SUB(c.startTime, INTERVAL 3 HOUR), '%d/%m/%Y %H:%i') AS startTime, 
+    c.callDuration AS callDuration,
     r.rating
     FROM calls c
     LEFT JOIN users caller ON c.callerId = caller.id
@@ -603,7 +606,10 @@ const getAllCallsByCompanyId = async (startDate, endDate, companyId) => {
     AND STR_TO_DATE('${finalDate} 23:59:59','%d/%m/%Y %H:%i:%s')
     AND
       c.createdBy = '${companyId}'
-    AND c.isSocketConnection = 1;
+    AND c.isSocketConnection = 1
+    ORDER BY
+    c.id
+    DESC;
     `
   );
 
@@ -681,6 +687,8 @@ const bulkCreateUsers = async (decodedBody, companyId) => {
 };
 
 const getUserByEmailAndCredential = async (email, phone) => {
+ // const pw = await CryptoUtils.convertToDatabaseFormatedPassword(phone);
+
   const data = await User.findOne({
     where: { email, phone, status: 1, userTypeId: 4 },
     attributes: ["id", "name", "email", "userTypeId", "phone"],
@@ -773,6 +781,8 @@ const getDashboardCSVInfo = async (companyId) => {
       c.connected = 1
     AND
       u.createdBy = '${companyId}'
+    AND
+      u.userTypeId = 4
     GROUP BY 
       department,
       month; 
@@ -780,6 +790,14 @@ const getDashboardCSVInfo = async (companyId) => {
   );
 
   return data;
+};
+
+const updateConfigsByUserId = async (payload) => {
+  const { recordCall, userId } = payload;
+
+  const updated = await User.update({ recordCall }, { where: { id: userId } });
+
+  return updated;
 };
 
 exports.userQueries = {
@@ -807,4 +825,6 @@ exports.userQueries = {
   bulkDeleteUsers,
   getUserTypeIdById,
   getDashboardCSVInfo,
+  updateConfigsByUserId,
 };
+
